@@ -18,10 +18,13 @@ local function detectChestSide()
     end
     local inv = component.inventory_controller
 
-    for _, side in pairs(sides) do
-        local size = inv.getInventorySize(side)
-        if size and size > 0 then
-            print("Chest found on side: " .. tostring(side))
+    -- Prueba cada lado posible hasta encontrar un inventario
+    local sideNames = {"bottom", "top", "north", "south", "west", "east"}
+    for _, name in ipairs(sideNames) do
+        local side = sides[name]
+        local ok, size = pcall(inv.getInventorySize, side)
+        if ok and size and size > 0 then
+            print("Chest found on side: " .. name)
             return side
         end
     end
