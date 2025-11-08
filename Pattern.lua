@@ -13,6 +13,34 @@ local ITEM_THRESHOLD = 128
 local FLUID_BATCH_SIZE = 1
 local FLUID_THRESHOLD = 1000
 
+-- Function to automatically detect the chest
+local function findChest()
+    if not component.isAvailable("inventory_controller") then
+        error("Inventory Controller not found!")
+    end
+    
+    local inv = component.inventory_controller
+    local allSides = {
+        {name = "top", side = sides.top},
+        {name = "bottom", side = sides.bottom},
+        {name = "front", side = sides.front},
+        {name = "back", side = sides.back},
+        {name = "left", side = sides.left},
+        {name = "right", side = sides.right}
+    }
+    
+    print("Searching for chest on all sides...")
+    for _, sideInfo in ipairs(allSides) do
+        local size = inv.getInventorySize(sideInfo.side)
+        if size and size > 0 then
+            print("Chest found on side: " .. sideInfo.name .. "!")
+            return sideInfo.side
+        end
+    end
+    
+    error("No chest found connected to the adapter")
+end
+
 local function parseExpression(str)
     if type(str) ~= "string" then return nil, "not a string" end
 
