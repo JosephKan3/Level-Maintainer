@@ -18,21 +18,26 @@ local function detectChestSide()
     end
     local inv = component.inventory_controller
 
-    -- Prueba cada lado posible hasta encontrar un inventario
-    local sideNames = {"bottom", "top", "north", "south", "west", "east"}
-    for _, name in ipairs(sideNames) do
-        local side = sides[name]
-        local ok, size = pcall(inv.getInventorySize, side)
+    -- Mapeo manual de lados válidos
+    local sidesToCheck = {
+        {name = "bottom", id = sides.bottom},
+        {name = "top",    id = sides.top},
+        {name = "north",  id = sides.north},
+        {name = "south",  id = sides.south},
+        {name = "west",   id = sides.west},
+        {name = "east",   id = sides.east}
+    }
+
+    for _, s in ipairs(sidesToCheck) do
+        local ok, size = pcall(inv.getInventorySize, s.id)
         if ok and size and size > 0 then
-            print("Chest found on side: " .. name)
-            return side
+            print("Chest found on side: " .. s.name .. " (size = " .. size .. ")")
+            return s.id
         end
     end
 
     error("No chest found connected to the adapter.")
 end
-
-local chestSide = detectChestSide()
 
 local function parseExpression(str)
     if type(str) ~= "string" then return nil, "not a string" end
