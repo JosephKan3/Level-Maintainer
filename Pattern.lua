@@ -2,11 +2,11 @@ local component = require "component"
 local sides = require "sides"
 local filesystem = require "filesystem"
 
--- Настройки
+-- Configuration
 local configPath = "/home/config.lua"
 local shrcPath = "/home/.shrc"
 
--- Значения по умолчанию
+-- Default values
 local ITEM_BATCH_SIZE = 64
 local ITEM_THRESHOLD = 128
 local FLUID_BATCH_SIZE = 1
@@ -56,7 +56,7 @@ end
 local function parseExpression(str)
     if type(str) ~= "string" then return nil, "not a string" end
 
-    -- Поддержка 1k, 1m, 1g, 1t, 1p
+    -- Support for 1k, 1m, 1g, 1t, 1p
     str = str:gsub("([0-9%.]+)%s*[kK]", "%1*1000")
     str = str:gsub("([0-9%.]+)%s*[mM]", "%1*1000000")
     str = str:gsub("([0-9%.]+)%s*[gG]", "%1*1000000000")
@@ -105,52 +105,74 @@ local function askValue(prompt, default)
 
     local value, err = parseExpression(input)
     if not value then
-        print("Ошибка: " .. tostring(err) .. ". Используется значение по умолчанию.")
+        print("Error: " .. tostring(err) .. ". Using default value.")
         return default
     end
     return value
 end
 
 local function serializeTable(tbl) 
-    local str = "{ ";
+    local str = "{ "
     for k,v in pairs(tbl) do
-        str = str .. "" .. k .. " = \"" .. v .. "\", "
+        str = str .. k .. " = \"" .. tostring(v) .. "\", "
     end
-    str = str:sub(1, -3)
-    local str = str .."}"
+    if #str > 2 then
+        str = str:sub(1, -3)
+    end
+    str = str .. " }"
     return str
 end
 
-local function scanChest(existingItems)
+local function scanChest(chestSide, existingItems)
     if not component.isAvailable("inventory_controller") then
-        error("Inventory Controller не найден!")
+        error("Inventory Controller not found!")
     end
     local inv = component.inventory_controller
     local size = inv.getInventorySize(chestSide)
-    if not size or size < 1 then error("Не удалось прочитать сундук или он пуст") end
+    if not size or size < 1 then 
+        error("Could not read chest or it is empty") 
+    end
 
     local items = {}
     local addedCount = 0
 
+    print("Scanning chest with " .. size .. " slots...")
+    
     for slot=1,size do
         local stack = inv.getStackInSlot(chestSide, slot)
-        if stack and stack.size > 0 then
+        if stack and stack.size and stack.size > 0 then
             local item_name = stack.label or stack.name
-            if not existingItems[item_name] then
+            
+            if item_name and not existingItems[item_name] then
                 local threshold = ITEM_THRESHOLD
                 local batch_size = ITEM_BATCH_SIZE
                 local fluid_name = nil
 
+                -- Check if it's a fluid drop
                 if string.find(item_name:lower(), "drop") then
                     threshold = FLUID_THRESHOLD
                     batch_size = FLUID_BATCH_SIZE
-                    fluid_name = item_name:lower():gsub("drop of ", ""):gsub(" ", "_")
+                    
+                    -- Try to get fluid tag safely
+                    if stack.fluidDrop and stack.fluidDrop.name then
+                        fluid_name = stack.fluidDrop.name
+                    else
+                        -- Fallback: extract from item name
+                        fluid_name = item_name:lower():gsub("drop of ", ""):gsub(" ", "_")
+                    end
                 end
 
-                print("\nНовый предмет найден: " .. item_name)
+                print("\nNew item found: " .. item_name)
                 threshold = askValue(item_name .. " threshold", threshold)
                 batch_size = askValue(item_name .. " batch_size", batch_size)
-                items[item_name] = fluid_name and {{fluid_tag = stack.fluidDrop.name}, threshold, batch_size} or {{item_id = stack.name, item_meta = stack.damage}, threshold, batch_size}
+                
+                -- Build the item entry
+                if fluid_name then
+                    items[item_name] = {{fluid_tag = fluid_name}, threshold, batch_size}
+                else
+                    items[item_name] = {{item_id = stack.name, item_meta = stack.damage or 0}, threshold, batch_size}
+                end
+                
                 addedCount = addedCount + 1
             end
         end
@@ -164,13 +186,12 @@ local function serializeItems(tbl)
     table.insert(result, "{")
     for k,v in pairs(tbl) do
         local key = string.format("[\"%s\"]", k)
-        table.insert(result, string.format("%s%s = {%s},", ind, key,
-            (v[1] and serializeTable(v[1]) or "nil") .. 
-            ", " .. 
-            tostring(v[2] or 1) ..
-            ", " ..  
-            tostring(v[3] or 0)
-        ))
+        local dataTable = v[1] and serializeTable(v[1]) or "nil"
+        local threshold = (v[2] == nil) and "nil" or tostring(v[2])
+        local batch = tostring(v[3] or 0)
+        
+        table.insert(result, string.format("%s%s = {%s, %s, %s},", 
+            ind, key, dataTable, threshold, batch))
     end
     table.insert(result, "}")
     return table.concat(result, "\n")
@@ -186,7 +207,7 @@ local function updateConfigItems(newItems)
 
     local startPos, bracePos = content:find('cfg%["items"%]%s*=%s*{')
     if not startPos then
-        error("Не найден массив cfg[\"items\"] в config.lua")
+        error("Array cfg[\"items\"] not found in config.lua")
     end
 
     local openBraces = 1
@@ -194,7 +215,8 @@ local function updateConfigItems(newItems)
     local endPos = nil
     while i <= #content do
         local c = content:sub(i,i)
-        if c == "{" then openBraces = openBraces + 1
+        if c == "{" then 
+            openBraces = openBraces + 1
         elseif c == "}" then
             openBraces = openBraces - 1
             if openBraces == 0 then
@@ -204,7 +226,9 @@ local function updateConfigItems(newItems)
         end
         i = i + 1
     end
-    if not endPos then error("Не удалось определить конец массива cfg[\"items\"]") end
+    if not endPos then 
+        error("Could not determine end of cfg[\"items\"] array") 
+    end
 
     local serialized = serializeItems(newItems)
     local updatedContent = content:sub(1, startPos-1) .. "cfg[\"items\"] = " .. serialized .. content:sub(endPos+1)
@@ -216,6 +240,11 @@ end
 
 local function ensureAutorun()
     local f = io.open(shrcPath, "r")
+    if not f then
+        print("WARNING: .shrc file not found, skipping autorun setup")
+        return
+    end
+    
     local content = f:read("*a")
     f:close()
 
@@ -223,31 +252,50 @@ local function ensureAutorun()
         return
     end
 
-    io.write("Добавить Maintainer.lua в автозапуск? (y/n): ")
+    io.write("Add Maintainer.lua to autostart? (y/n): ")
     local answer = io.read()
     if answer and answer:lower() == "y" then
         local fw = io.open(shrcPath, "a")
         fw:write("\nMaintainer\n")
         fw:close()
-        print("Maintainer.lua добавлен в автозапуск")
+        print("Maintainer.lua added to autostart")
     end
 end
 
--- Главная функция
+-- Main function
 local function main()
-    print("Сканирование сундука...")
+    print("=== Chest Scanner ===")
+    print("Level Maintainer - Pattern Configuration Tool")
+    print("")
+    
+    -- Automatically detect the chest
+    local chestSide = findChest()
+    
+    print("\nScanning items...")
     local cfg = loadConfig()
-    local newItems, addedCount = scanChest(cfg.items)
+    local newItems, addedCount = scanChest(chestSide, cfg.items)
 
     for k,v in pairs(newItems) do
         cfg.items[k] = v
     end
 
-    updateConfigItems(cfg.items)
-    print("\nconfig.lua обновлен, добавлено предметов: "..tostring(addedCount))
+    if addedCount > 0 then
+        updateConfigItems(cfg.items)
+        print("\n" .. string.rep("=", 50))
+        print("config.lua updated successfully!")
+        print("Items added: " .. tostring(addedCount))
+        print(string.rep("=", 50))
+    else
+        print("\nNo new items found to add.")
+    end
 
     ensureAutorun()
-    os.execute("reboot")
+    
+    io.write("\nReboot now? (y/n): ")
+    local reboot = io.read()
+    if reboot and reboot:lower() == "y" then
+        os.execute("reboot")
+    end
 end
 
 main()
