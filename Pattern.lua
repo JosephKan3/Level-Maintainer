@@ -19,20 +19,21 @@ local function findChest()
     end
     
     local inv = component.inventory_controller
+    -- For Adapter: sides are 0-5 (not sides.top, etc)
     local allSides = {
-        {name = "top", side = sides.top},
-        {name = "bottom", side = sides.bottom},
-        {name = "front", side = sides.front},
-        {name = "back", side = sides.back},
-        {name = "left", side = sides.left},
-        {name = "right", side = sides.right}
+        {name = "bottom", side = 0},
+        {name = "top", side = 1},
+        {name = "back", side = 2},
+        {name = "front", side = 3},
+        {name = "right", side = 4},
+        {name = "left", side = 5}
     }
     
     print("Searching for chest on all sides...")
     for _, sideInfo in ipairs(allSides) do
         local success, size = pcall(inv.getInventorySize, sideInfo.side)
         if success and size and size > 0 then
-            print("Chest found on side: " .. sideInfo.name .. "!")
+            print("Chest found on side: " .. sideInfo.name .. " (side " .. sideInfo.side .. ")!")
             return sideInfo.side
         end
     end
@@ -41,16 +42,21 @@ local function findChest()
     print("\nNo chest detected automatically.")
     print("Available sides:")
     print("0 = bottom, 1 = top, 2 = back, 3 = front, 4 = right, 5 = left")
-    io.write("Enter side number manually: ")
+    io.write("Enter side number where chest is located: ")
     local input = io.read()
     local sideNum = tonumber(input)
     
     if sideNum and sideNum >= 0 and sideNum <= 5 then
-        print("Using side: " .. sideNum)
-        return sideNum
+        local success, size = pcall(inv.getInventorySize, sideNum)
+        if success and size and size > 0 then
+            print("Using side: " .. sideNum)
+            return sideNum
+        else
+            error("No valid inventory found on side " .. sideNum)
+        end
     end
     
-    error("Invalid side number or no chest found connected to the robot")
+    error("Invalid side number or no chest found connected to the Adapter")
 end
 
 local function parseExpression(str)
