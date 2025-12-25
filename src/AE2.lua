@@ -90,7 +90,7 @@ function AE2.requestItem(name, data, threshold, count)
       end
     end
 
-    -- 3. Calculate Total (Prioritize Fluid to avoid double counting ghost items)
+    -- 3. Calculate Total (Prioritize Fluid)
     if fluidStock > 0 then
         currentStock = fluidStock
     else
@@ -108,27 +108,15 @@ function AE2.requestItem(name, data, threshold, count)
   if craftable then
     local craft = craftable.request(count)
     
-    -- Wait for the request computation (AE2 calculation)
-    local timeout = 5 -- Wait up to 0.5 seconds
+    local timeout = 5 
     while craft.isComputing() and timeout > 0 do 
         os.sleep(0.1) 
         timeout = timeout - 1
     end
 
-    -- Check for failure
     if craft.hasFailed() then
-      local reason = "Unknown"
-      local success, ret = pcall(function() return craft.hasFailed() end)
-      
-      if success then
-          if type(ret) == "string" then
-              reason = ret -- The driver gave us a text reason
-          elseif ret == true then
-              reason = "Missing resources or No CPU" -- Driver just said 'true'
-          end
-      end
-      
-      return false, "Failed to request " .. formatNumber(count) .. " [" .. reason .. "]"
+      -- Modificación: Mensaje simple sin la razón entre corchetes
+      return false, "Failed to request " .. formatNumber(count)
     else
       return true, "Requested " .. formatNumber(count)
     end
