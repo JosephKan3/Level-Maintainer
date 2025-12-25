@@ -55,20 +55,6 @@ local function getCraftableForItem(itemName)
   return craftable
 end
 
--- Auto-detect if item is a fluid based on name
-local function isFluidDrop(itemName)
-  return itemName:lower():find("drop") ~= nil
-end
-
--- Extract fluid tag from item name
-local function getFluidTagFromName(itemName)
-  local fluidName = itemName:gsub("^[Dd]rop [Oo]f ", "")
-  fluidName = fluidName:gsub("^[Mm]olten ", "molten.")
-  fluidName = fluidName:gsub(" ", ".")
-  return fluidName:lower()
-end
-
--- changed NBT to Label
 -- Returns: success:boolean, message:string
 function AE2.requestItem(name, data, threshold, count)
   local craftable = getCraftableForItem(name)
@@ -76,27 +62,46 @@ function AE2.requestItem(name, data, threshold, count)
     return false, "is not craftable!"
   end
 
+  -- Check if we need to verify stock levels (Threshold logic)
   if threshold and threshold > 0 then
     local currentStock = 0
-    
-    local itemsFound = ME.getItemsInNetwork({ label = name })
-    if itemsFound then
-      for _, i in pairs(itemsFound) do
-        currentStock = currentStock + i.size
-      end
-    end
+    local fluidStock = 0
+    local itemStock = 0
 
+    -- 1. Check Fluid Network first
+    -- This helps handle cases where fluids appear as items too (ghost items)
     local fluids = ME.getFluidsInNetwork()
     if fluids then
+        -- Clean up name to handle "Drop of X" or "Molten X" vs "X"
         local cleanName = name:gsub("^[Dd]rop [Oo]f ", ""):gsub("^[Mm]olten ", ""):lower()
         local targetNameLower = name:lower()
         
         for _, f in pairs(fluids) do
             local labelLower = (f.label or ""):lower()
+            -- Match exact name or cleaned name
             if labelLower == targetNameLower or labelLower == cleanName then
-                currentStock = currentStock + f.amount
+                fluidStock = fluidStock + f.amount
             end
         end
+    end
+
+    -- 2. Check Item Network
+    local itemsFound = ME.getItemsInNetwork({ label = name })
+    if itemsFound then
+      for _, i in pairs(itemsFound) do
+        itemStock = itemStock + i.size
+      end
+    end
+
+    -- 3. Determine actual stock with Priority Logic
+    if fluidStock > 0 then
+        -- If we found it in fluids, assume it's a fluid task.
+        -- We ignore itemStock here to prevent double-counting ghost items 
+        -- that some drivers report for fluids.
+        currentStock = fluidStock
+    else
+        -- If no fluid found, fall back to item count.
+        currentStock = itemStock
     end
 
     if currentStock >= threshold then
@@ -108,7 +113,7 @@ function AE2.requestItem(name, data, threshold, count)
 
   if craftable then
     local craft = craftable.request(count)
-    
+    -- Wait briefly for the request to register
     local timeout = 5
     while craft.isComputing() and timeout > 0 do 
         os.sleep(0.1) 
@@ -124,7 +129,7 @@ function AE2.requestItem(name, data, threshold, count)
     end
   end
 
-  return false, "is not craftable! (Generic Error)"
+  return false, "is not craftable!"
 end
 
 function AE2.checkIfCrafting()
