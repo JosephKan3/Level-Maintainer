@@ -1,3 +1,14 @@
+-- Returns a table of CPU statuses: {isBusy=true/false, name=string}
+function AE2.getCpuStatus()
+  local cpus = {}
+  for _, cpu in pairs(ME.getCpus()) do
+    local status = {}
+    status.name = cpu.cpu.name and cpu.cpu.name() or "CPU"
+    status.isBusy = cpu.cpu.isBusy and cpu.cpu.isBusy() or false
+    table.insert(cpus, status)
+  end
+  return cpus
+end
 local component = require("component")
 local ME = component.me_interface
 local gpu = component.gpu

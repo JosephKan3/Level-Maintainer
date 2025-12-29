@@ -78,12 +78,11 @@ while true do
   local itemsCrafting = ae2.checkIfCrafting()
 
   for item, cfgItem in pairs(items) do
+    local priority = cfgItem[4] or "high"
     if itemsCrafting[item] then
-      -- Item is actively crafting -> Green (Verde) logic implies working
       logInfoColoredAfterColon(item .. ": is already being crafted, skipping...", 0x00FF00)
     else
       local data, threshold, batch_size
-      
       if type(cfgItem[1]) == "table" then
         data = cfgItem[1]
         threshold = cfgItem[2]
@@ -93,19 +92,32 @@ while true do
         threshold = cfgItem[1]
         batch_size = cfgItem[2]
       end
-      
-      local success, msg = ae2.requestItem(item, data, threshold, batch_size)
-      
-      local color = nil
-      if msg:find("^Failed to request") or msg:find("is not craftable") then
-        color = 0xFF0000 -- RED (Error)
-      elseif msg:find("The amount %(") and msg:find("Aborting request%.$") then
-        color = 0xFFFF00 -- YELLOW (Threshold Reached / Standby)
-      elseif msg:find("^Requested") then
-        color = 0x00FF00 -- GREEN (Success / Crafting started)
+
+      local allIdle = true
+      if priority == "low" then
+        local cpus = ae2.getCpuStatus and ae2.getCpuStatus() or {}
+        for _, cpu in ipairs(cpus) do
+          if cpu.isBusy then
+            allIdle = false
+            break
+          end
+        end
       end
 
-      logInfoColoredAfterColon(item .. ": " .. msg, color)
+      if priority == "high" or allIdle then
+        local success, msg = ae2.requestItem(item, data, threshold, batch_size)
+        local color = nil
+        if msg:find("^Failed to request") or msg:find("is not craftable") then
+          color = 0xFF0000 -- RED (Error)
+        elseif msg:find("The amount %(") and msg:find("Aborting request%.$") then
+          color = 0xFFFF00 -- YELLOW (Threshold Reached / Standby)
+        elseif msg:find("^Requested") then
+          color = 0x00FF00 -- GREEN (Success / Crafting started)
+        end
+        logInfoColoredAfterColon(item .. ": " .. msg, color)
+      else
+        logInfoColoredAfterColon(item .. ": low priority, CPUs busy, skipping...", 0xFFFF00)
+      end
     end
   end
 
